@@ -8,7 +8,8 @@ void PropagateLayer(NET* Net, LAYER* Lower, LAYER* Upper)
     dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
     dim3 dimGrid((n + TILE_SIZE - 1) / TILE_SIZE, (m + TILE_SIZE - 1) / TILE_SIZE);
 
-    mysgemm<<<dimGrid, dimBlock>>>(1, Lower->Units, Upper->Units, Lower->Output, Upper->Weight, Upper->Output)
+    mysgemm<<<dimGrid, dimBlock>>>(1, Lower->Units, Upper->Units, Lower->Output, Upper->Weight, Upper->Output);
+    
     sigmoid<<<dimGrid, dimBlock>>>(Upper->Units, Upper->Output);
     cudaDeviceSynchronize();
 }

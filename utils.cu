@@ -63,7 +63,7 @@ __global__ void mysgemm(int m, int n, int k, const double *A, const double *B, d
     {
         C[row * n + col] = res_C;
     }
-
+    __syncthreads();
 }
 
 __global__ void sigmoid(const double* vec_size, double* vec_res)
