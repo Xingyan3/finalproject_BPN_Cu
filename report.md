@@ -1,7 +1,9 @@
 # CS217 Final Project report
 
 **Team name**: VOID
+
 **Group member**: Xingyan Zhou, Xinyu Zhang and Zhaorui Yang
+
 **Topic**: Parallelizing serial C code with CUDA
 
 # Introduction
