@@ -31,6 +31,8 @@
 #include <stdio.h>
 #include <math.h>
 
+#include "support.h"
+
 
 typedef int           BOOL;
 typedef int           INT;
@@ -519,6 +521,7 @@ void EvaluateNet(NET* Net)
 
 int main()
 {
+  Timer timer;
   NET  Net;
   BOOL Stop;
   REAL MinTestError;
@@ -528,6 +531,7 @@ int main()
   RandomWeights(&Net);
   InitializeApplication(&Net);
 
+  startTime(&timer);
   Stop = FALSE;
   MinTestError = MAX_REAL;
   do {
@@ -544,6 +548,8 @@ int main()
       RestoreWeights(&Net);
     }
   } while (NOT Stop);
+
+  stopTime(&timer); printf("%f s\n", elapsedTime(timer));
 
   TestNet(&Net);
   EvaluateNet(&Net);
