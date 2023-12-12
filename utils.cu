@@ -66,7 +66,11 @@ __global__ void mysgemm(int m, int n, int k, const double *A, const double *B, d
 
 }
 
-__global__ void sigmoid(const double* vec, double* vec_res)
+__global__ void sigmoid(const double* vec_size, double* vec_res)
 {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
     
+    if (idx < vec_size) {
+        vec_res[idx] = 1.0 / (1.0 + exp(-vec[idx]));
+    }
 }
