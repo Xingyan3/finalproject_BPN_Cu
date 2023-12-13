@@ -10,88 +10,14 @@
 
 The Backpropagation Network source code is a C language implementation of a neural network simulator, focusing on the backpropagation algorithm. It's primarily used for time-series forecasting, such as predicting the annual number of sunspots. The code includes the definition of the network structure, random number generation functions, and the core algorithms for learning and prediction.
 
-Our team has thoroughly reviewed the source code and found that the backpropagation network consists of both forward propagation and backpropagation. As a result, we can parallelize the code in two directions. Additionally, we identified several matrix and vector multiplications that we had implemented in our assignments, we decided to integrated them into the project.
+The platform we chosen is Bender. It's a powerful platform and we have get familiar with it, since it helps us alot in the assignment, we still want to use it in the final project.
 
-Furthermore, we're consider to implement a timing mechanism within the source code. This feature will help to compare the performance metrics before and after modifications.
+We have thoroughly reviewed the source code and found that the backpropagation network consists of both propagation and backpropagation. As a result, we can parallelize the code in two directions. Additionally, we found several matrix and vector multiplications that we had implemented in our assignments, we decided to integrated them into the project.
+
+Furthermore, we're consider to implement a timer within the source code. This feature will help to compare the performance before and after modifications.
 
 # Our works
 ### Implementation details
-
-**backpropagate.cu**
-```C
-#include "include.h"
-#include "utils.cu"
-
-void ComputeOutputError(NET* Net, REAL* Target)
-{
-  INT  i;
-  REAL Out, Err;
-   
-  Net->Error = 0;
-  for (i=1; i<=Net->OutputLayer->Units; i++) {
-    Out = Net->OutputLayer->Output[i];
-    Err = Target[i-1]-Out;
-    Net->OutputLayer->Error[i] = Net->Gain * Out * (1-Out) * Err;
-    Net->Error += 0.5 * sqr(Err);
-  }
-}
-
-void BackpropagateLayer(NET* Net, LAYER* Upper, LAYER* Lower)
-{
-  INT  i,j;
-  REAL Out, Err;
-   
-  for (i=1; i<=Lower->Units; i++) {
-    Out = Lower->Output[i];
-    Err = 0;
-    for (j=1; j<=Upper->Units; j++) {
-      Err += Upper->Weight[j][i] * Upper->Error[j];
-    }
-    Lower->Error[i] = Net->Gain * Out * (1-Out) * Err;
-  }
-}
-
-void BackpropagateNet(NET* Net)
-{
-  INT l;
-   
-  for (l=NUM_LAYERS-1; l>1; l--) {
-    BackpropagateLayer(Net, Net->Layer[l], Net->Layer[l-1]);
-  }
-}
-
-void AdjustWeights(NET* Net)
-{
-  INT  l,i,j;
-  REAL Out, Err, dWeight;
-   
-  for (l=1; l<NUM_LAYERS; l++) {
-    for (i=1; i<=Net->Layer[l]->Units; i++) {
-      for (j=0; j<=Net->Layer[l-1]->Units; j++) {
-        Out = Net->Layer[l-1]->Output[j];
-        Err = Net->Layer[l]->Error[i];
-        dWeight = Net->Layer[l]->dWeight[i][j];
-        Net->Layer[l]->Weight[i][j] += Net->Eta * Err * Out + Net->Alpha * dWeight;
-        Net->Layer[l]->dWeight[i][j] = Net->Eta * Err * Out;
-      }
-    }
-  }
-}
-```
-
-**main.c**
-```C
-#include <stdio.h>
-#include <stdlib.h>
-#include "support.h"
-#include "propagate.cu"
-#include "backpropagate.cu"
-
-int main(int argc, char *argv[])
-{
-
-}
-```
 
 **main.cu**
 ```C
@@ -112,14 +38,14 @@ int main(int argc, char *argv[])
   RandomWeights(&Net);
   InitializeApplication(&Net);
 
-  cudaMalloc((void**)&Net, sizeof(NET)*1);
+  cudaMalloc((void**)&Net_d, sizeof(NET)*1);
   cudaDeviceSynchronize();
 
   Stop = FALSE;
   MinTestError = MAX_REAL;
   do {
-    TrainNet(&Net, 10);
-    TestNet(&Net);
+    TrainNet(&Net, &Net_d, 10);
+    TestNet(&Net, &Net_d);
     if (TestError < MinTestError) {
       fprintf(f, " - saving Weights ...");
       MinTestError = TestError;
@@ -139,133 +65,113 @@ int main(int argc, char *argv[])
 }
 ```
 
-**propagate.cu**
-```C
-#include "include.h"
-#include "utils.cu"
-
-void PropagateLayer(NET* Net, LAYER* Lower, LAYER* Upper)
-{
-    const unsigned int BLOCK_SIZE = TILE_SIZE;
-
-    dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-    dim3 dimGrid((n + TILE_SIZE - 1) / TILE_SIZE, (m + TILE_SIZE - 1) / TILE_SIZE);
-
-    mysgemm<<<dimGrid, dimBlock>>>(1, Lower->Units, Upper->Units, Lower->Output, Upper->Weight, Upper->Output);
-    
-    sigmoid<<<dimGrid, dimBlock>>>(Upper->Units, Upper->Output);
-    cudaDeviceSynchronize();
-}
-
-void PropagateNet(NET* Net)
-{
-  INT l;
-   
-  for (l=0; l<NUM_LAYERS-1; l++) {
-    PropagateLayer(Net, Net->Layer[l], Net->Layer[l+1]);
-  }
-}
-```
-
-**utils.cu**
+**kernel.cu**
 ```C
 #include <stdio.h>
+#include "include.h"
 
 #define TILE_SIZE 16
 
-__global__ void mysgemm(int m, int n, int k, const double *A, const double *B, double* C) {
-
-    /********************************************************************
-     *
-     * Compute C = A x B
-     *   where A is a (m x k) matrix
-     *   where B is a (k x n) matrix
-     *   where C is a (m x n) matrix
-     *
-     * Use shared memory for tiling
-     *
-     ********************************************************************/
-
-    int bx = blockIdx.x;
-    int by = blockIdx.y;
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-
-    int row = by * TILE_SIZE + ty;
-    int col = bx * TILE_SIZE + tx;
-
-    float res_C = 0.0f;
+__global__ void PropagateLayerKernel(REAL* layerOutput, REAL* nextLayerOutput, REAL* weight, const REAL gain, const int units, const int nextUnits)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
     
-    __shared__ float A_shared[TILE_SIZE][TILE_SIZE];
-    __shared__ float B_shared[TILE_SIZE][TILE_SIZE];
-
-
-    for (int t = 0; t < (k - 1) / TILE_SIZE + 1; t++)
-    {
-        if(row < m && t * TILE_SIZE + tx < k)
-        {
-            A_shared[ty][tx] = A[row * k + t * TILE_SIZE + tx];
+    if (i < nextUnits) {
+        REAL sum = 0;
+        for (int j = 0; j < units; j++) {
+            sum += weight[i * units + j] * layerOutput[j];
         }
-        else
-        {
-            A_shared[ty][tx] = 0.0;
-        }
-
-        if (col < n && t * TILE_SIZE + ty < k)
-        {
-            B_shared[ty][tx] = B[(t * TILE_SIZE + ty) * n + col];
-        }
-        else 
-        {
-            B_shared[ty][tx] = 0.0;
-        }
-
-        __syncthreads();
-
-        for (int i = 0; i < TILE_SIZE; i++)
-        {
-            res_C += A_shared[ty][i] * B_shared[i][tx];
-        }
-
-        __syncthreads();
+        nextLayerOutput[i] = 1 / (1 + exp(-gain * sum));
     }
-
-    if(row < m && col < n)
-    {
-        C[row * n + col] = res_C;
-    }
-    __syncthreads();
 }
 
-__global__ void sigmoid(const double* vec_size, double* vec_res)
+
+void PropagateNetCUDA(NET *Net, NET *Net_d, int NUM_LAYERS)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int blockSize = TILE_SIZE;
+
+    for (int l = 0; l < NUM_LAYERS - 1; l++)
+    {
+        int units = Net->Layer[l]->Units;
+        int nextUnits = Net->Layer[l + 1]->Units;
+        int numBlocks = (nextUnits + blockSize - 1) / blockSize;
+
+        int size = nextUnits * units;
     
-    if (idx < vec_size) {
-        vec_res[idx] = 1.0 / (1.0 + exp(-vec[idx]));
+        REAL *d_weight, *d_layerOutput, *d_nextLayerOutput;
+        cudaMalloc((REAL**)&d_weight, size * sizeof(REAL));
+        cudaMalloc((REAL**)&d_layerOutput, units * sizeof(REAL));
+        cudaMalloc((REAL**)&d_nextLayerOutput, nextUnits * sizeof(REAL));
+
+        cudaMemcpy(d_layerOutput, Net->Layer[l]->Output, units * sizeof(REAL), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_weight, Net->Layer[l + 1]->Weight, size * sizeof(REAL), cudaMemcpyHostToDevice);
+
+        PropagateLayerKernel<<<numBlocks, blockSize>>>(d_layerOutput, d_nextLayerOutput, d_weight, Net->Gain, units, nextUnits);
+
+        cudaMemcpy(Net->Layer[l + 1]->Output, d_nextLayerOutput, nextUnits * sizeof(REAL), cudaMemcpyDeviceToHost);
+            
+        cudaFree(d_layerOutput);
+        cudaFree(d_nextLayerOutput);
+        cudaFree(d_weight);
     }
 }
 ```
 
-### How to run
+**supprot.cu**
+```C
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
 
+#include "support.h"
 
+void verify(float *A, float *B, float *C, unsigned int m, unsigned int k,
+  unsigned int n) {
+
+  const float relativeTolerance = 1e-6;
+  unsigned int count = 0;
+
+  for(int row = 0; row < m; ++row) {
+    for(int col = 0; col < n; ++col) {
+      float sum = 0;
+      for(unsigned int i = 0; i < k; ++i) {
+        sum += A[row*k + i]*B[i*n + col];
+      }
+      count++;
+      float relativeError = (sum - C[row*n + col])/sum;
+      //printf("%f/%f ", sum, C[row*n + col]);
+      if (relativeError > relativeTolerance
+        || relativeError < -relativeTolerance) {
+        printf("\nTEST FAILED %u\n\n",count);
+        exit(1);
+      }
+    }
+  }
+  printf("TEST PASSED %u\n\n", count);
+
+}
+
+void startTime(Timer* timer) {
+    gettimeofday(&(timer->startTime), NULL);
+}
+
+void stopTime(Timer* timer) {
+    gettimeofday(&(timer->endTime), NULL);
+}
+
+float elapsedTime(Timer timer) {
+    return ((float) ((timer.endTime.tv_sec - timer.startTime.tv_sec) \
+                + (timer.endTime.tv_usec - timer.startTime.tv_usec)/1.0e6));
+}
+```
 
 # Results
-**Result 1: Source code running time**
-```
-<img src="https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_origional.png" metaname="viewport" width="400"/>
-```
-
-```
-<img src="https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_GPU.png" metaname="viewport" width="400"/>
-```
-**Result 2: GPU accelerated code running time**
+Surprisingly, we found that there's not alot improvements after our optimization, the running time don't have significant difference. To discover the reason, we print the running time for propagation and found that the GPU running time is slower than CPU running time. We have the following data shows the running time in se
 
 # Conclusion
+
+Our project faced some challenges when we tried to deal with the data structure. In the source code, the author was used two dimentional array to doing the matrix multiplication, but when we are trying to copy that from CPU to GPU, we got some errors like "memory access error", probably because CUDA does not supply to  dimentional arrary. This is the most major ploblems we faced. We come out two ways to solve this problem, the first one is change the data sturcture, the second one is combine the propagation and backpropagation togather. None of these is easy, we finally decided to use the first choice.
 
 
 
 # Contribution
-
-
