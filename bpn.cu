@@ -389,7 +389,7 @@ void ComputeOutputError(NET* Net, REAL* Target)
   for (i=1; i<=Net->OutputLayer->Units; i++) {
     Out = Net->OutputLayer->Output[i];
     Err = Target[i-1]-Out;
-    Net->OutputLayer->Error[i] = Net->Gain * Out * (1-Out) * Err;
+    // Net->OutputLayer->Error[i] = Net->Gain * Out * (1-Out) * Err;
     Net->Error += 0.5 * sqr(Err);
   }
 }

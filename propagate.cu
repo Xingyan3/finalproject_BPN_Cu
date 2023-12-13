@@ -3,14 +3,13 @@
 
 void PropagateLayer(NET* Net, LAYER* Lower, LAYER* Upper)
 {
-    const unsigned int BLOCK_SIZE = TILE_SIZE;
+  const unsigned int BLOCK_SIZE = TILE_SIZE;
+  const unsigned int numBlocks = (Upper->Units + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-    dim3 dimGrid((n + TILE_SIZE - 1) / TILE_SIZE, (m + TILE_SIZE - 1) / TILE_SIZE);
+  mysgemm<<<BLOCK_SIZE, numBlocks>>>(1, Lower->Units, Upper->Units, Lower->Output, Upper->Weight, Upper->Output);
 
-    mysgemm<<<dimGrid, dimBlock>>>(1, Lower->Units, Upper->Units, Lower->Output, Upper->Weight, Upper->Output)
-    sigmoid<<<dimGrid, dimBlock>>>(Upper->Units, Upper->Output);
-    cudaDeviceSynchronize();
+  sigmoid<<<BLOCK_SIZE, numBlocks>>>(Upper->Units, Upper->Output);
+  cudaDeviceSynchronize();
 }
 
 void PropagateNet(NET* Net)

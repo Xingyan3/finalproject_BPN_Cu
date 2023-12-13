@@ -15,14 +15,14 @@ int main(int argc, char *argv[])
   RandomWeights(&Net);
   InitializeApplication(&Net);
 
-  cudaMalloc((void**)&Net, sizeof(NET)*1);
+  cudaMalloc((void**)&Net_d, sizeof(NET)*1);
   cudaDeviceSynchronize();
 
   Stop = FALSE;
   MinTestError = MAX_REAL;
   do {
-    TrainNet(&Net, 10);
-    TestNet(&Net);
+    TrainNet(&Net, &Net_d, 10);
+    TestNet(&Net, &Net_d);
     if (TestError < MinTestError) {
       fprintf(f, " - saving Weights ...");
       MinTestError = TestError;

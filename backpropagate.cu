@@ -18,17 +18,13 @@ void ComputeOutputError(NET* Net, REAL* Target)
 
 void BackpropagateLayer(NET* Net, LAYER* Upper, LAYER* Lower)
 {
-  INT  i,j;
-  REAL Out, Err;
-   
-  for (i=1; i<=Lower->Units; i++) {
-    Out = Lower->Output[i];
-    Err = 0;
-    for (j=1; j<=Upper->Units; j++) {
-      Err += Upper->Weight[j][i] * Upper->Error[j];
-    }
-    Lower->Error[i] = Net->Gain * Out * (1-Out) * Err;
-  }
+  const unsigned int BLOCK_SIZE = TILE_SIZE;
+  const unsigned int numBlocks = (Upper->Units + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+  mysgemm<<<numBlocks, BLOCK_SIZE>>>(1, Lower->Units, Upper->Units, Upper->Error, Upper->Weight, Upper->Error);
+
+  sigmoid_d<<<numBlocks, BLOCK_SIZE>>>(Upper->Units, Net->Gain, Lower->Output, Upper->Error);
+  cudaDeviceSynchronize();
 }
 
 
