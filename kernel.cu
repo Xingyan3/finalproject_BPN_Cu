@@ -7,24 +7,27 @@ __global__ void PropagateLayerKernel(REAL* layerOutput, REAL* nextLayerOutput, R
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     
-    if (i < nextUnits) {
+    if (i <= nextUnits && i) {
         REAL sum = 0;
-        for (int j = 0; j < units; j++) {
-            sum += weight[i * units + j] * layerOutput[j];
+        for (int j = 0; j <= units; j++) {
+            sum += weight[i * (units+1) + j] * layerOutput[j];
         }
         nextLayerOutput[i] = 1 / (1 + exp(-gain * sum));
+
     }
 }
 
 
-void PropagateNetCUDA(NET *Net, NET *Net_d, int NUM_LAYERS)
+void PropagateNetCUDA(NET *Net, int NUM_LAYERS)
 {
     int blockSize = TILE_SIZE;
 
+    float total_time = 0;
+
     for (int l = 0; l < NUM_LAYERS - 1; l++)
     {
-        int units = Net->Layer[l]->Units;
-        int nextUnits = Net->Layer[l + 1]->Units;
+        int units = Net->Layer[l]->Units + 1;
+        int nextUnits = Net->Layer[l + 1]->Units + 1;
         int numBlocks = (nextUnits + blockSize - 1) / blockSize;
 
         int size = nextUnits * units;
@@ -34,10 +37,21 @@ void PropagateNetCUDA(NET *Net, NET *Net_d, int NUM_LAYERS)
         cudaMalloc((REAL**)&d_layerOutput, units * sizeof(REAL));
         cudaMalloc((REAL**)&d_nextLayerOutput, nextUnits * sizeof(REAL));
 
-        cudaMemcpy(d_layerOutput, Net->Layer[l]->Output, units * sizeof(REAL), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_weight, Net->Layer[l + 1]->Weight, size * sizeof(REAL), cudaMemcpyHostToDevice);
+        REAL* flattenedWeight = (REAL*)malloc(size * sizeof(REAL));
+        for (int i = 0; i < nextUnits; i++) {
+            for (int j = 0; j < units; j++) {
+                flattenedWeight[i * units + j] = Net->Layer[l + 1]->Weight[i][j];
+            }
+        }
 
-        PropagateLayerKernel<<<numBlocks, blockSize>>>(d_layerOutput, d_nextLayerOutput, d_weight, Net->Gain, units, nextUnits);
+        cudaMemcpy(d_weight, flattenedWeight, size * sizeof(REAL), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_layerOutput, Net->Layer[l]->Output, units * sizeof(REAL), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_nextLayerOutput, Net->Layer[l + 1]->Output, nextUnits * sizeof(REAL), cudaMemcpyHostToDevice);
+
+        // startTime(&timer_kernel);
+        PropagateLayerKernel<<<numBlocks, blockSize>>>(d_layerOutput, d_nextLayerOutput, d_weight, Net->Gain, Net->Layer[l]->Units , Net->Layer[l + 1]->Units);
+        // stopTime(&timer_kernel); 
+        // total_time += elapsedTime(timer_kernel);
 
         cudaMemcpy(Net->Layer[l + 1]->Output, d_nextLayerOutput, nextUnits * sizeof(REAL), cudaMemcpyDeviceToHost);
             
@@ -45,6 +59,7 @@ void PropagateNetCUDA(NET *Net, NET *Net_d, int NUM_LAYERS)
         cudaFree(d_nextLayerOutput);
         cudaFree(d_weight);
     }
+    // printf("kernel running time: %f s\n", total_time);
 }
 
 
