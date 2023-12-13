@@ -63,28 +63,15 @@ void PropagateNetCUDA(NET *Net, int NUM_LAYERS)
 }
 
 
-__global__ void BackpropagateLayerKernel(REAL* output, REAL* error, REAL* weight, const REAL gain, int units, int prevUnits) {
+__global__ void BackpropagateLayerKernel(REAL* prevoutput, REAL* error, REAL* preverror, REAL* weight, const REAL gain, int units, int prevUnits) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < units) {
-        REAL out = output[i];
+    if (i <= prevUnits && i) {
+        REAL out = prevoutput[i];
         REAL err = 0;
-        for (int j = 0; j < prevUnits; j++) {
-            err += weight[j * units + i] * error[j];
+        for (int j = 1; j <= units; j++) {
+            err += weight[j * (prevUnits+1) + i] * error[j];
         }
-        error[i] = gain * out * (1 - out) * err;
-    }
-}
-
-__global__ void AdjustWeightsKernel(REAL* output, REAL* error, REAL* weight, REAL* dWeight, const REAL eta, const REAL alpha, const int units, const int prevUnits) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < units) {
-        for (int j = 0; j < prevUnits; j++) {
-            REAL out = output[j];
-            REAL err = error[i];
-            REAL dW = dWeight[i * prevUnits + j];
-            weight[i * units + j] += eta * err * out + alpha * dW;
-            dWeight[i * units + j] = eta * err * out;
-        }
+        preverror[i] = gain * out * (1 - out) * err;
     }
 }
 
@@ -94,35 +81,38 @@ void BackpropagateNetCUDA(NET *Net, int NUM_LAYERS)
 
     for (int l = NUM_LAYERS - 1; l > 1; l--)
     {
-        int units = Net->Layer[l]->Units;
-        int prevUnits = Net->Layer[l - 1]->Units;
+        int units = Net->Layer[l]->Units + 1;
+        int prevUnits = Net->Layer[l - 1]->Units + 1;
 
         int numBlocks = (prevUnits + blockSize - 1) / blockSize;
 
-        int size = prevUnits * (units+1);
+        int size = prevUnits * units;
     
-        REAL *d_weight, *d_dweight, *d_prevlayerOutput, *d_prevLayerError, *d_LayerError;
+        REAL *d_weight, *d_prevLayerError, *d_prevlayerOutput, *d_LayerError;
         cudaMalloc((REAL**)&d_weight, size * sizeof(REAL));
-        cudaMalloc((REAL**)&d_dweight, size * sizeof(REAL));
         cudaMalloc((REAL**)&d_prevlayerOutput, prevUnits * sizeof(REAL));
-        cudaMalloc((REAL**)&d_prevLayerError, prevUnits * sizeof(REAL));
         cudaMalloc((REAL**)&d_LayerError, units * sizeof(REAL));
+        cudaMalloc((REAL**)&d_prevLayerError, prevUnits * sizeof(REAL));
 
-        cudaMemcpy(d_prevLayerError, Net->Layer[l - 1]->Output, prevUnits * sizeof(REAL), cudaMemcpyHostToDevice);
+        REAL* flattenedWeight = (REAL*)malloc(size * sizeof(REAL));
+        for (int i = 0; i < units; i++) {
+            for (int j = 0; j < prevUnits; j++) {
+                flattenedWeight[i * prevUnits + j] = Net->Layer[l]->Weight[i][j];
+            }
+        }
+
+        cudaMemcpy(d_weight, flattenedWeight, size * sizeof(REAL), cudaMemcpyHostToDevice);
         cudaMemcpy(d_prevlayerOutput, Net->Layer[l - 1]->Output, prevUnits * sizeof(REAL), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_weight, Net->Layer[l]->Weight, size * sizeof(REAL), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_LayerError, Net->Layer[l]->Error, units * sizeof(REAL), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_prevLayerError, Net->Layer[l - 1]->Error, prevUnits * sizeof(REAL), cudaMemcpyHostToDevice);
+        
+        BackpropagateLayerKernel<<<numBlocks, blockSize>>>(d_prevlayerOutput, d_LayerError, d_prevLayerError, d_weight, Net->Gain, Net->Layer[l]->Units, Net->Layer[l - 1]->Units);
 
-        BackpropagateLayerKernel<<<numBlocks, blockSize>>>(d_prevlayerOutput, d_LayerError, d_weight, Net->Gain, units, prevUnits);
-        AdjustWeightsKernel<<<numBlocks, blockSize>>>(d_prevlayerOutput, d_LayerError, d_weight, d_dweight, Net->Eta, Net->Alpha, units, prevUnits);
-        // printf("jjj");
-        // fflush(stdout);
-        cudaMemcpy(Net->Layer[l]->Weight, d_weight, size * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(Net->Layer[l]->dWeight, d_dweight, size * sizeof(REAL), cudaMemcpyDeviceToHost);
+        cudaMemcpy(Net->Layer[l - 1]->Error, d_prevLayerError, prevUnits * sizeof(REAL), cudaMemcpyDeviceToHost);
 
         cudaFree(d_prevlayerOutput);
-        cudaFree(d_prevLayerError);
         cudaFree(d_weight);
-        cudaFree(d_dweight);
+        cudaFree(d_prevLayerError);
         cudaFree(d_LayerError);
     }
 }
