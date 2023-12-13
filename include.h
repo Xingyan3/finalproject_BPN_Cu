@@ -1,78 +1,53 @@
 /******************************************************************************
-
-                      ====================================================
-        Network:      Backpropagation Network with Bias Terms and Momentum
-                      ====================================================
-
-        Application:  Time-Series Forecasting
-                      Prediction of the Annual Number of Sunspots
-
-        Author:       Karsten Kutza
-        Date:         17.4.96
-
-        Reference:    D.E. Rumelhart, G.E. Hinton, R.J. Williams
-                      Learning Internal Representations by Error Propagation
-                      in:
-                      D.E. Rumelhart, J.L. McClelland (Eds.)
-                      Parallel Distributed Processing, Volume 1
-                      MIT Press, Cambridge, MA, pp. 318-362, 1986
-
- ******************************************************************************/
-
-
-
-
-/******************************************************************************
                             D E C L A R A T I O N S
  ******************************************************************************/
-
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
 
-#include "support.h"
+#define TILE_SIZE 16
 
+typedef int BOOL;
+typedef int INT;
+typedef double REAL;
 
-typedef int           BOOL;
-typedef int           INT;
-typedef double        REAL;
+#define FALSE 0
+#define TRUE 1
+#define NOT !
+#define AND &&
+#define OR ||
 
-#define FALSE         0
-#define TRUE          1
-#define NOT           !
-#define AND           &&
-#define OR            ||
+#define MIN_REAL -HUGE_VAL
+#define MAX_REAL +HUGE_VAL
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+#define MAX(x, y) ((x) > (y) ? (x) : (y))
 
-#define MIN_REAL      -HUGE_VAL
-#define MAX_REAL      +HUGE_VAL
-#define MIN(x,y)      ((x)<(y) ? (x) : (y))
-#define MAX(x,y)      ((x)>(y) ? (x) : (y))
+#define LO 0.1
+#define HI 0.9
+#define BIAS 1
 
-#define LO            0.1
-#define HI            0.9
-#define BIAS          1
+#define sqr(x) ((x) * (x))
 
-#define sqr(x)        ((x)*(x))
-
-
-typedef struct {                     /* A LAYER OF A NET:                     */
-        INT           Units;         /* - number of units in this layer       */
-        REAL*         Output;        /* - output of ith unit                  */
-        REAL*         Error;         /* - error term of ith unit              */
-        REAL**        Weight;        /* - connection weights to ith unit      */
-        REAL**        WeightSave;    /* - saved weights for stopped training  */
-        REAL**        dWeight;       /* - last weight deltas for momentum     */
+typedef struct
+{                      /* A LAYER OF A NET:                     */
+    INT Units;         /* - number of units in this layer       */
+    REAL *Output;      /* - output of ith unit                  */
+    REAL *Error;       /* - error term of ith unit              */
+    REAL **Weight;     /* - connection weights to ith unit      */
+    REAL **WeightSave; /* - saved weights for stopped training  */
+    REAL **dWeight;    /* - last weight deltas for momentum     */
 } LAYER;
 
-typedef struct {                     /* A NET:                                */
-        LAYER**       Layer;         /* - layers of this net                  */
-        LAYER*        InputLayer;    /* - input layer                         */
-        LAYER*        OutputLayer;   /* - output layer                        */
-        REAL          Alpha;         /* - momentum factor                     */
-        REAL          Eta;           /* - learning rate                       */
-        REAL          Gain;          /* - gain of sigmoid function            */
-        REAL          Error;         /* - total net error                     */
+typedef struct
+{                       /* A NET:                                */
+    LAYER **Layer;      /* - layers of this net                  */
+    LAYER *InputLayer;  /* - input layer                         */
+    LAYER *OutputLayer; /* - output layer                        */
+    REAL Alpha;         /* - momentum factor                     */
+    REAL Eta;           /* - learning rate                       */
+    REAL Gain;          /* - gain of sigmoid function            */
+    REAL Error;         /* - total net error                     */
 } NET;
 
 
@@ -344,108 +319,12 @@ void RestoreWeights(NET* Net)
   }
 }
 
-
-/******************************************************************************
-                     P R O P A G A T I N G   S I G N A L S
- ******************************************************************************/
-
-
-void PropagateLayer(NET* Net, LAYER* Lower, LAYER* Upper)
-{
-  INT  i,j;
-  REAL Sum;
-
-  for (i=1; i<=Upper->Units; i++) {
-    Sum = 0;
-    for (j=0; j<=Lower->Units; j++) {
-      Sum += Upper->Weight[i][j] * Lower->Output[j];
-    }
-    Upper->Output[i] = 1 / (1 + exp(-Net->Gain * Sum));
-  }
-}
-
-
-void PropagateNet(NET* Net)
-{
-  INT l;
-   
-  for (l=0; l<NUM_LAYERS-1; l++) {
-    PropagateLayer(Net, Net->Layer[l], Net->Layer[l+1]);
-  }
-}
-
-
-/******************************************************************************
-                  B A C K P R O P A G A T I N G   E R R O R S
- ******************************************************************************/
-
-
-void ComputeOutputError(NET* Net, REAL* Target)
-{
-  INT  i;
-  REAL Out, Err;
-   
-  Net->Error = 0;
-  for (i=1; i<=Net->OutputLayer->Units; i++) {
-    Out = Net->OutputLayer->Output[i];
-    Err = Target[i-1]-Out;
-    // Net->OutputLayer->Error[i] = Net->Gain * Out * (1-Out) * Err;
-    Net->Error += 0.5 * sqr(Err);
-  }
-}
-
-
-void BackpropagateLayer(NET* Net, LAYER* Upper, LAYER* Lower)
-{
-  INT  i,j;
-  REAL Out, Err;
-   
-  for (i=1; i<=Lower->Units; i++) {
-    Out = Lower->Output[i];
-    Err = 0;
-    for (j=1; j<=Upper->Units; j++) {
-      Err += Upper->Weight[j][i] * Upper->Error[j];
-    }
-    Lower->Error[i] = Net->Gain * Out * (1-Out) * Err;
-  }
-}
-
-
-void BackpropagateNet(NET* Net)
-{
-  INT l;
-   
-  for (l=NUM_LAYERS-1; l>1; l--) {
-    BackpropagateLayer(Net, Net->Layer[l], Net->Layer[l-1]);
-  }
-}
-
-
-void AdjustWeights(NET* Net)
-{
-  INT  l,i,j;
-  REAL Out, Err, dWeight;
-   
-  for (l=1; l<NUM_LAYERS; l++) {
-    for (i=1; i<=Net->Layer[l]->Units; i++) {
-      for (j=0; j<=Net->Layer[l-1]->Units; j++) {
-        Out = Net->Layer[l-1]->Output[j];
-        Err = Net->Layer[l]->Error[i];
-        dWeight = Net->Layer[l]->dWeight[i][j];
-        Net->Layer[l]->Weight[i][j] += Net->Eta * Err * Out + Net->Alpha * dWeight;
-        Net->Layer[l]->dWeight[i][j] = Net->Eta * Err * Out;
-      }
-    }
-  }
-}
-
-
 /******************************************************************************
                       S I M U L A T I N G   T H E   N E T
  ******************************************************************************/
 
 
-void SimulateNet(NET* Net, REAL* Input, REAL* Output, REAL* Target, BOOL Training)
+void SimulateNet(NET* Net, NET* Net_d, REAL* Input, REAL* Output, REAL* Target, BOOL Training)
 {
   SetInput(Net, Input);
   PropagateNet(Net);
@@ -459,31 +338,31 @@ void SimulateNet(NET* Net, REAL* Input, REAL* Output, REAL* Target, BOOL Trainin
 }
 
 
-void TrainNet(NET* Net, INT Epochs)
+void TrainNet(NET* Net, NET* Net_d, INT Epochs)
 {
   INT  Year, n;
   REAL Output[M];
 
   for (n=0; n<Epochs*TRAIN_YEARS; n++) {
     Year = RandomEqualINT(TRAIN_LWB, TRAIN_UPB);
-    SimulateNet(Net, &(Sunspots[Year-N]), Output, &(Sunspots[Year]), TRUE);
+    SimulateNet(Net, NET* Net_d, &(Sunspots[Year-N]), Output, &(Sunspots[Year]), TRUE);
   }
 }
 
 
-void TestNet(NET* Net)
+void TestNet(NET* Net, NET* Net_d)
 {
   INT  Year;
   REAL Output[M];
 
   TrainError = 0;
   for (Year=TRAIN_LWB; Year<=TRAIN_UPB; Year++) {
-    SimulateNet(Net, &(Sunspots[Year-N]), Output, &(Sunspots[Year]), FALSE);
+    SimulateNet(Net, NET* Net_d, &(Sunspots[Year-N]), Output, &(Sunspots[Year]), FALSE);
     TrainError += Net->Error;
   }
   TestError = 0;
   for (Year=TEST_LWB; Year<=TEST_UPB; Year++) {
-    SimulateNet(Net, &(Sunspots[Year-N]), Output, &(Sunspots[Year]), FALSE);
+    SimulateNet(Net, NET* Net_d, &(Sunspots[Year-N]), Output, &(Sunspots[Year]), FALSE);
     TestError += Net->Error;
   }
   fprintf(f, "\nNMSE is %0.3f on Training Set and %0.3f on Test Set",
@@ -511,48 +390,4 @@ void EvaluateNet(NET* Net)
                Output [0],
                Output_[0]);
   }
-}
-
-
-/******************************************************************************
-                                    M A I N
- ******************************************************************************/
-
-
-int main()
-{
-  Timer timer;
-  NET  Net;
-  BOOL Stop;
-  REAL MinTestError;
-
-  InitializeRandoms();
-  GenerateNetwork(&Net);
-  RandomWeights(&Net);
-  InitializeApplication(&Net);
-
-  startTime(&timer);
-  Stop = FALSE;
-  MinTestError = MAX_REAL;
-  do {
-    TrainNet(&Net, 10);
-    TestNet(&Net);
-    if (TestError < MinTestError) {
-      fprintf(f, " - saving Weights ...");
-      MinTestError = TestError;
-      SaveWeights(&Net);
-    }
-    else if (TestError > 1.2 * MinTestError) {
-      fprintf(f, " - stopping Training and restoring Weights ...");
-      Stop = TRUE;
-      RestoreWeights(&Net);
-    }
-  } while (NOT Stop);
-
-  stopTime(&timer); printf("%f s\n", elapsedTime(timer));
-
-  TestNet(&Net);
-  EvaluateNet(&Net);
-   
-  FinalizeApplication(&Net);
 }

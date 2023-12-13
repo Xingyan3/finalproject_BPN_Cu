@@ -2,12 +2,15 @@ NVCC        = nvcc
 NVCC_FLAGS  = -O3 
 LD_FLAGS    = -lcudart 
 EXE	        = bpn
-OBJ	        = bpn.o
+OBJ	        = bpn.o support.o
 
 default: $(EXE)
 
-bpn.o: bpn.cu
+main.o: bpn.cu support.h
 	$(NVCC) -c -o $@ bpn.cu $(NVCC_FLAGS)
+
+support.o: support.cu support.h
+	$(NVCC) -c -o $@ support.cu $(NVCC_FLAGS)
 
 $(EXE): $(OBJ)
 	$(NVCC) $(OBJ) -o $(EXE) $(LD_FLAGS)
