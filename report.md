@@ -15,6 +15,8 @@ We have thoroughly reviewed the source code and found that the backpropagation n
 # Our works
 ### Implementation details
 
+Below shows four major files we implemented.
+
 **main.cu**
 ```C
 #include <stdio.h>
@@ -60,6 +62,7 @@ int main(int argc, char *argv[])
   FinalizeApplication(&Net);
 }
 ```
+**Code explanation:** This is the main function involving training, testing, and evaluating a network. It begains with initializing random numbers, generating NN structure and setting up parameters. After that, it allcates memory on GPU, training and testing with in loops. Finally, it will testing and evaluate reuslt with `EvaluateNet` and doing necessay cleanup.
 
 **kernel.cu**
 ```C
@@ -111,7 +114,72 @@ void PropagateNetCUDA(NET *Net, NET *Net_d, int NUM_LAYERS)
         cudaFree(d_weight);
     }
 }
+
+__global__ void BackpropagateLayerKernel(REAL* output, REAL* error, REAL* weight, const REAL gain, int units, int prevUnits) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < units) {
+        REAL out = output[i];
+        REAL err = 0;
+        for (int j = 0; j < prevUnits; j++) {
+            err += weight[j * units + i] * error[j];
+        }
+        error[i] = gain * out * (1 - out) * err;
+    }
+}
+
+__global__ void AdjustWeightsKernel(REAL* output, REAL* error, REAL* weight, REAL* dWeight, const REAL eta, const REAL alpha, const int units, const int prevUnits) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < units) {
+        for (int j = 0; j < prevUnits; j++) {
+            REAL out = output[j];
+            REAL err = error[i];
+            REAL dW = dWeight[i * prevUnits + j];
+            weight[i * units + j] += eta * err * out + alpha * dW;
+            dWeight[i * units + j] = eta * err * out;
+        }
+    }
+}
+
+void BackpropagateNetCUDA(NET *Net, int NUM_LAYERS)
+{
+    int blockSize = TILE_SIZE;
+
+    for (int l = NUM_LAYERS - 1; l > 1; l--)
+    {
+        int units = Net->Layer[l]->Units;
+        int prevUnits = Net->Layer[l - 1]->Units;
+
+        int numBlocks = (prevUnits + blockSize - 1) / blockSize;
+
+        int size = prevUnits * (units+1);
+    
+        REAL *d_weight, *d_dweight, *d_prevlayerOutput, *d_prevLayerError, *d_LayerError;
+        cudaMalloc((REAL**)&d_weight, size * sizeof(REAL));
+        cudaMalloc((REAL**)&d_dweight, size * sizeof(REAL));
+        cudaMalloc((REAL**)&d_prevlayerOutput, prevUnits * sizeof(REAL));
+        cudaMalloc((REAL**)&d_prevLayerError, prevUnits * sizeof(REAL));
+        cudaMalloc((REAL**)&d_LayerError, units * sizeof(REAL));
+
+        cudaMemcpy(d_prevLayerError, Net->Layer[l - 1]->Output, prevUnits * sizeof(REAL), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_prevlayerOutput, Net->Layer[l - 1]->Output, prevUnits * sizeof(REAL), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_weight, Net->Layer[l]->Weight, size * sizeof(REAL), cudaMemcpyHostToDevice);
+
+        BackpropagateLayerKernel<<<numBlocks, blockSize>>>(d_prevlayerOutput, d_LayerError, d_weight, Net->Gain, units, prevUnits);
+        AdjustWeightsKernel<<<numBlocks, blockSize>>>(d_prevlayerOutput, d_LayerError, d_weight, d_dweight, Net->Eta, Net->Alpha, units, prevUnits);
+        // printf("jjj");
+        // fflush(stdout);
+        cudaMemcpy(Net->Layer[l]->Weight, d_weight, size * sizeof(REAL), cudaMemcpyDeviceToHost);
+        cudaMemcpy(Net->Layer[l]->dWeight, d_dweight, size * sizeof(REAL), cudaMemcpyDeviceToHost);
+
+        cudaFree(d_prevlayerOutput);
+        cudaFree(d_prevLayerError);
+        cudaFree(d_weight);
+        cudaFree(d_dweight);
+        cudaFree(d_LayerError);
+    }
+}
 ```
+**Code explanation:** There are many key functions serve for the CUDA version of backpropagation network. ``PropagateLayerKernel`` computes the output of the propagation layer. It sums the products of weights and layer outputs, and then uses the sigmoid fuction $\frac{1}{1+(-gain)^{sum}}$ for activiation. ``PropagateNetCUDA`` manages the forward propagation for all layers. For each layer, it allocates GPU mem, copies data frpm host to device, calls another fuction and copies results back to host.``BackpropagateLayerKernel``Computes the error for each neuron in a layer. It uses the derivative of the sigmoid function and the errors from the following layer.``AdjustWeightsKernel``adjust the weights based on the calculated errors.``BackpropagateNetCUDA``is the reverse version of PropagateNetCUDA, it manages the backward propagation. It allocates memory, transfers data, and invokes the kernels in reverse order.
 
 **supprot.cu**
 ```C
@@ -160,8 +228,124 @@ float elapsedTime(Timer timer) {
                 + (timer.endTime.tv_usec - timer.startTime.tv_usec)/1.0e6));
 }
 ```
+**Code explanation:**``verify`` function checks the acciracy of matrix multiplication operation. It compares result against the expected result computed within the function. Additionaly, there are some other timer functions such as ``starTime`` and ``stopTime`` record the time spend, ``elapsedTime`` calculates the duration and provid the time in seconds.
+
+**utils.cu**
+```C
+#include <stdio.h>
+
+#define TILE_SIZE 16
+
+__global__ void mysgemm(int m, int n, int k, const double *A, const double *B, double* C) {
+    int tx = threadIdx.x + blockIdx.x * blockDim.x;
+
+    if (tx < n) {
+        double res_C = 0.0;
+
+        for (int i = 0; i < k; i++) {
+            res_C += A[i] * B[i * n + tx];
+        }
+        C[tx] = res_C;
+    }
+}
+
+__global__ void sigmoid(const double* vec_size, double* vec_res)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (idx < vec_size) {
+        vec_res[idx] = 1.0 / (1.0 + exp(-vec[idx]));
+    }
+}
+
+__global__ void sigmoid_d(const double* vec_size, const double* gain, const double* vec_in, double* vec_res)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (idx < vec_size) {
+        double sigmoid_val = vec_in[idx];
+        vec_res[idx] = gain * sigmoid_val * (1.0 - sigmoid_val) * vec_res[idx];
+    }
+}
+
+__global__ void ComputeOutputErrorKernel(REAL* output, REAL* target, REAL* error, REAL gain, int units)
+{
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    if (i < units) {
+        REAL out = output[i];
+        REAL err = target[i] - out;
+        error[i] = gain * out * (1 - out) * err; // 计算误差梯度
+    }
+}
+
+__global__ void mysgemm(int m, int n, int k, const double *A, const double *B, double* C) {
+
+    /********************************************************************
+     *
+     * Compute C = A x B
+     *   where A is a (m x k) matrix
+     *   where B is a (k x n) matrix
+     *   where C is a (m x n) matrix
+     *
+     * Use shared memory for tiling
+     *
+     ********************************************************************/
+
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    int row = by * TILE_SIZE + ty;
+    int col = bx * TILE_SIZE + tx;
+
+    float res_C = 0.0f;
+    
+    __shared__ float A_shared[TILE_SIZE][TILE_SIZE];
+    __shared__ float B_shared[TILE_SIZE][TILE_SIZE];
+
+
+    for (int t = 0; t < (k - 1) / TILE_SIZE + 1; t++)
+    {
+        if(row < m && t * TILE_SIZE + tx < k)
+        {
+            A_shared[ty][tx] = A[row * k + t * TILE_SIZE + tx];
+        }
+        else
+        {
+            A_shared[ty][tx] = 0.0;
+        }
+
+        if (col < n && t * TILE_SIZE + ty < k)
+        {
+            B_shared[ty][tx] = B[(t * TILE_SIZE + ty) * n + col];
+        }
+        else 
+        {
+            B_shared[ty][tx] = 0.0;
+        }
+
+        __syncthreads();
+
+        for (int i = 0; i < TILE_SIZE; i++)
+        {
+            res_C += A_shared[ty][i] * B_shared[i][tx];
+        }
+
+        __syncthreads();
+    }
+
+    if(row < m && col < n)
+    {
+        C[row * n + col] = res_C;
+    }
+    __syncthreads();
+}
+```
+**Code explanation:** This file contains some basic functions for matrix and vector multiplications. For example, sigmoid activision function``sigmoid``, sigmoid derivative function ``sigmoid_d`` and error calculation for output layer ``ComputeOutputErrorKernel``.
 
 # Results
+
 
 
 # Conclusion
