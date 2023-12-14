@@ -1,12 +1,17 @@
+
 NVCC        = nvcc
+ifeq (,$(shell which nvprof))
 NVCC_FLAGS  = -O3 
+else
+NVCC_FLAGS  = -O3  --std=c++03
+endif
 LD_FLAGS    = -lcudart 
 EXE	        = bpn
 OBJ	        = bpn.o support.o
 
 default: $(EXE)
 
-main.o: bpn.cu support.h
+bpn.o: bpn.cu kernel.cu support.h include.h
 	$(NVCC) -c -o $@ bpn.cu $(NVCC_FLAGS)
 
 support.o: support.cu support.h
