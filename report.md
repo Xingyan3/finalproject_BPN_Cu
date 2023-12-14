@@ -6,6 +6,8 @@
 
 **Project option**: Parallelizing serial C code with CUDA
 
+**Presentation:** https://drive.google.com/file/d/1E1w3_t478-Pcqu46hdp768A5TWJNJtH3/view?usp=sharing
+
 # Project idea
 
 The Backpropagation Network source code is a C language implementation of a neural network simulator, focusing on the backpropagation algorithm. It's primarily used for time-series forecasting, such as predicting the annual number of sunspots. The code includes the definition of the network structure, random number generation functions, and the core algorithms for learning and prediction.
