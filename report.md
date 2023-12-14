@@ -347,21 +347,21 @@ __global__ void mysgemm(int m, int n, int k, const double *A, const double *B, d
 # Results
 **K=100**
 GPU:
-![image](https://github.com/UCR-CSEE217/finalproject-f23-void/blob/main/picture/result_GPU_k100.png)
+![image](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_GPU_k100.png)
 CPU:
-![image](https://github.com/UCR-CSEE217/finalproject-f23-void/blob/main/picture/result_origional_k100.png)
+![image](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_origional_k100.png)
 
 **K=500**
 GPU:
-![image](https://github.com/UCR-CSEE217/finalproject-f23-void/blob/main/picture/result_GPU_k500.png)
+![image](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_GPU_k500.png)
 CPU:
-![image](https://github.com/UCR-CSEE217/finalproject-f23-void/blob/main/picture/result_origional_k500.png)
+![image](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_origional_k500.png)
 
 **K=1000**
 GPU:
-![image](https://github.com/UCR-CSEE217/finalproject-f23-void/blob/main/picture/result_GPU_k1000.png)
+![image](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_GPU_k1000.png)
 CPU:
-![image](https://github.com/UCR-CSEE217/finalproject-f23-void/blob/main/picture/result_origional_k1000.png)
+![image](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_origional_k1000.png)
 
 # Conclusion
 
