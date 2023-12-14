@@ -357,7 +357,7 @@ __global__ void mysgemm(int m, int n, int k, const double *A, const double *B, d
   ![GPU Results for K=500](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_GPU_k500.png)
 
 - **CPU Results**:
-  ![CPU Results for K=500](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_origional_k500.png)
+  ![image](./picture/result_origional_k500.png)
 
 #### K = 1000
 - **GPU Results**:
