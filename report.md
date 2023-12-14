@@ -347,24 +347,24 @@ __global__ void mysgemm(int m, int n, int k, const double *A, const double *B, d
 # Results
 #### K = 100
 - **GPU Results**:
-  ![GPU Results for K=100](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_GPU_k100.png)
+  ![GPU Results for K=100](./picture/result_GPU_k100.png)
 
 - **CPU Results**:
-  ![CPU Results for K=100](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_origional_k100.png)
+  ![CPU Results for K=100](./picture/result_origional_k100.png)
 
 #### K = 500
 - **GPU Results**:
-  ![GPU Results for K=500](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_GPU_k500.png)
+  ![GPU Results for K=500](./picture/result_GPU_k500.png)
 
 - **CPU Results**:
   ![image](./picture/result_origional_k500.png)
 
 #### K = 1000
 - **GPU Results**:
-  ![GPU Results for K=1000](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_GPU_k1000.png)
+  ![GPU Results for K=1000](./picture/result_GPU_k1000.png)
 
 - **CPU Results**:
-  ![CPU Results for K=1000](https://github.com/UCR-CSEE217/finalproject-f23-void/tree/main/picture/result_origional_k1000.png)
+  ![CPU Results for K=1000](./picture/result_origional_k1000.png)
 
 # Conclusion
 
