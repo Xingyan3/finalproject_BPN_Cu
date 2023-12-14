@@ -379,6 +379,7 @@ The serial running time, which is the execution time on the CPU without parallel
 These findings suggest that the optimization for GPU did not effectively leverage its parallel processing capabilities, and perhaps the tasks at hand were more suited for serial processing. Future efforts in optimization would need to carefully consider the nature of the tasks and the overheads involved in GPU computing.
 
 # Contributions
+
 | Name | contributions | works |
 |----------|----------|----------|
 | Xinyu Zhang    | 1/3    | Implementaion, Testing, Experiments, Report   |
