@@ -377,3 +377,10 @@ The propagation time showed a low performance. On the GPU, despite its parallel 
 The serial running time, which is the execution time on the CPU without parallelization, was consistently faster. This was attributed to the simpler architecture of the CPU that avoids the overheads present in GPU computations, and the nature of our tasks which might not have been ideally suited for parallelization.
 
 These findings suggest that the optimization for GPU did not effectively leverage its parallel processing capabilities, and perhaps the tasks at hand were more suited for serial processing. Future efforts in optimization would need to carefully consider the nature of the tasks and the overheads involved in GPU computing.
+
+# Contributions
+| Name | contributions | works |
+|----------|----------|----------|
+| Xinyu Zhang    | 1/3    | Implementaion, Testing, Experiments, Report   |
+| Xingyan Zhou    | 1/3     |Implementaion, Testing, Experiments, Report  |
+| Zhaorui Yang   | 1/3     | Implementaion, Testing, Experiments, Report  |
